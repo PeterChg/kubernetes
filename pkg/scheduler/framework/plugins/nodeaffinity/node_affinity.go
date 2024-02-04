@@ -19,6 +19,7 @@ package nodeaffinity
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -156,6 +157,14 @@ func (pl *NodeAffinity) Filter(ctx context.Context, state *framework.CycleState,
 		// Fallback to calculate requiredNodeSelector and requiredNodeAffinity
 		// here when PreFilter is disabled.
 		s = &preFilterState{requiredNodeSelectorAndAffinity: nodeaffinity.GetRequiredNodeAffinity(pod)}
+	}
+
+	//ECI vnode skip required node Affinity check, by default
+	//But if pod created by daemonset, ignore pod nodeAffinity will lead to some non-eci nodes have none daemonset pod,
+	//while ECI node have more than one daemonset pod. This results in daemonset controller unlimited create pod in some nodes,
+	//and unlimited delete pod in ECI node.
+	if IsECIVnode(node) && !IsDaemonsetPod(pod) {
+		return nil
 	}
 
 	// Ignore parsing errors for backwards compatibility.
@@ -306,4 +315,27 @@ func getPreFilterState(cycleState *framework.CycleState) (*preFilterState, error
 		return nil, fmt.Errorf("invalid PreFilter state, got type %T", c)
 	}
 	return s, nil
+}
+
+// check current node whether ECI vnode
+func IsECIVnode(node *v1.Node) bool {
+	if value, exist := node.Labels["k8s.aliyun.com/vnode"]; exist {
+		return strings.Compare("true", value) == 0
+	}
+	return false
+}
+
+// check current pod whether daemonset pod
+func IsDaemonsetPod(pod *v1.Pod) bool {
+	ownerReference := pod.GetOwnerReferences()
+	if 0 == len(ownerReference) {
+		return false
+	}
+
+	for _, refer := range ownerReference {
+		if refer.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
 }

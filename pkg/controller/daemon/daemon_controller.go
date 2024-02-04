@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -1292,6 +1293,9 @@ func predicates(pod *v1.Pod, node *v1.Node, taints []v1.Taint) (fitsNodeName, fi
 	fitsNodeName = len(pod.Spec.NodeName) == 0 || pod.Spec.NodeName == node.Name
 	// Ignore parsing errors for backwards compatibility.
 	fitsNodeAffinity, _ = nodeaffinity.GetRequiredNodeAffinity(pod).Match(node)
+	if IsECIVnode(node) && !IsDaemonsetPod(pod) {
+		fitsNodeAffinity = true
+	}
 	_, hasUntoleratedTaint := v1helper.FindMatchingUntoleratedTaint(taints, pod.Spec.Tolerations, func(t *v1.Taint) bool {
 		return t.Effect == v1.TaintEffectNoExecute || t.Effect == v1.TaintEffectNoSchedule
 	})
@@ -1354,4 +1358,27 @@ func getUnscheduledPodsWithoutNode(runningNodesList []*v1.Node, nodeToDaemonPods
 		}
 	}
 	return results
+}
+
+// check current node whether ECI vnode
+func IsECIVnode(node *v1.Node) bool {
+	if value, exist := node.Labels["k8s.aliyun.com/vnode"]; exist {
+		return strings.Compare("true", value) == 0
+	}
+	return false
+}
+
+// check current pod whether daemonset pod
+func IsDaemonsetPod(pod *v1.Pod) bool {
+	ownerReference := pod.GetOwnerReferences()
+	if 0 == len(ownerReference) {
+		return false
+	}
+
+	for _, refer := range ownerReference {
+		if refer.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
 }

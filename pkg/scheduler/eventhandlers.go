@@ -499,12 +499,15 @@ func AdmissionCheck(pod *v1.Pod, nodeInfo *framework.NodeInfo, includeAllFailure
 		}
 	}
 
-	if matches, _ := corev1nodeaffinity.GetRequiredNodeAffinity(pod).Match(nodeInfo.Node()); !matches {
-		admissionResults = append(admissionResults, AdmissionResult{Name: nodeaffinity.Name, Reason: nodeaffinity.ErrReasonPod})
-		if !includeAllFailures {
-			return admissionResults
+	if !(IsECIVnode(nodeInfo.Node()) && !IsDaemonsetPod(pod)) {
+		if matches, _ := corev1nodeaffinity.GetRequiredNodeAffinity(pod).Match(nodeInfo.Node()); !matches {
+			admissionResults = append(admissionResults, AdmissionResult{Name: nodeaffinity.Name, Reason: nodeaffinity.ErrReasonPod})
+			if !includeAllFailures {
+				return admissionResults
+			}
 		}
 	}
+
 	if !nodename.Fits(pod, nodeInfo) {
 		admissionResults = append(admissionResults, AdmissionResult{Name: nodename.Name, Reason: nodename.ErrReason})
 		if !includeAllFailures {
@@ -526,4 +529,27 @@ type AdmissionResult struct {
 	Name                 string
 	Reason               string
 	InsufficientResource *noderesources.InsufficientResource
+}
+
+// check current node whether ECI vnode
+func IsECIVnode(node *v1.Node) bool {
+	if value, exist := node.Labels["k8s.aliyun.com/vnode"]; exist {
+		return strings.Compare("true", value) == 0
+	}
+	return false
+}
+
+// check current pod whether daemonset pod
+func IsDaemonsetPod(pod *v1.Pod) bool {
+	ownerReference := pod.GetOwnerReferences()
+	if 0 == len(ownerReference) {
+		return false
+	}
+
+	for _, refer := range ownerReference {
+		if refer.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
 }

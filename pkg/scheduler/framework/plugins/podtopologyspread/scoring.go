@@ -151,6 +151,9 @@ func (pl *PodTopologySpread) PreScore(
 		// (1) `node` should satisfy incoming pod's NodeSelector/NodeAffinity
 		// (2) All topologyKeys need to be present in `node`
 		match, _ := requiredNodeAffinity.Match(node)
+		if IsECIVnode(node) && !IsDaemonsetPod(pod) {
+			match = true
+		}
 		if !match || (requireAllTopologies && !nodeLabelsMatchSpreadConstraints(node.Labels, state.Constraints)) {
 			return
 		}

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -271,6 +272,10 @@ func (pl *PodTopologySpread) calPreFilterState(ctx context.Context, pod *v1.Pod)
 		// spreading is applied to nodes that pass those filters.
 		// Ignore parsing errors for backwards compatibility.
 		match, _ := requiredSchedulingTerm.Match(node)
+		if IsECIVnode(node) && !IsDaemonsetPod(pod) {
+			match = true
+		}
+
 		if !match {
 			return
 		}
@@ -375,4 +380,27 @@ func sizeHeuristic(nodes int, constraints []topologySpreadConstraint) int {
 		}
 	}
 	return 0
+}
+
+// check current node whether ECI vnode
+func IsECIVnode(node *v1.Node) bool {
+	if value, exist := node.Labels["k8s.aliyun.com/vnode"]; exist {
+		return strings.Compare("true", value) == 0
+	}
+	return false
+}
+
+// check current pod whether daemonset pod
+func IsDaemonsetPod(pod *v1.Pod) bool {
+	ownerReference := pod.GetOwnerReferences()
+	if 0 == len(ownerReference) {
+		return false
+	}
+
+	for _, refer := range ownerReference {
+		if refer.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
 }
